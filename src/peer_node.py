@@ -55,7 +55,7 @@ class PeerNode:
 
         while True:
             msg = self.pusher.recv_multipart()
-            if len(msg) > 0:
+            if len(msg) == 2:
                 [addr, msg] = msg
                 data, rc = self._to_json(msg.decode())
                 if rc and 'cmd' in data:

@@ -2,7 +2,7 @@ from threading import Thread
 import json
 import time
 
-from . import MQTTClient
+from mqtt import MQTTClient
 from peer_node import PeerNode
 from ipcmgr_node import IpcMgrNode
 
@@ -34,7 +34,7 @@ class EdgeIpcMgr(MQTTClient):
             services.get('evpusher')[0], mgr_ident)
         evpuller = self.create_pusher(
             services.get('evpuller')[0], mgr_ident)
-        evpuller.send('Hi, I am %s' % evpuller, evpusher_ident)
+        evpuller.send('Hi, I am %s' % evpuller.ident, evpusher_ident.ident)
         self.peers_status = True
 
     def create_evmgr(self, config):
@@ -47,7 +47,7 @@ class EdgeIpcMgr(MQTTClient):
         evpusher = PeerNode(ident, mgr_ident)
         evpusher.recv_loop()
         evpusher.ready()
-        return ident
+        return evpusher
 
     def send_cloud_msg(self):
         while True:
@@ -58,11 +58,7 @@ class EdgeIpcMgr(MQTTClient):
 def main():
     client = EdgeIpcMgr('127.0.0.1', 1883)
     client.connect()
-    t1 = Thread(target=client.loop)
-    t2 = Thread(target=client.send_cloud_msg)
-    t1.daemon = True
-    t1.start()
-    t2.start()
+    client.loop()
 
 
 if __name__ == '__main__':
