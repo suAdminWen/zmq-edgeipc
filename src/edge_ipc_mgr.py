@@ -1,76 +1,65 @@
-from paho.mqtt.client import Client
 from threading import Thread
-import zmq
 import json
 import time
-from random import randint
 
-context = zmq.Context()
-edge_router = context.socket(zmq.ROUTER)
-edge_router.setsockopt(zmq.IDENTITY, b'edge_ipc')
-edge_router.bind('tcp://*:5555')
+from . import MQTTClient
+from peer_node import PeerNode
+from ipcmgr_node import IpcMgrNode
 
 
-def on_connect(client, userdata, flags, rc):
-    print('on_connect ', rc)
-    client.subscribe('edge')
+class EdgeIpcMgr(MQTTClient):
 
+    def __init__(self, host, port):
+        super(EdgeIpcMgr, self).__init__(host, port)
+        self.peers_status = False
 
-def on_message(client, userdata, msg):
-    print('on_message')
-    payload = msg.payload.decode()
-    print('I 接收MQTT云端命令', payload)
-    if payload == 'cmd':
-        data = {
-            'cmd': ['STOP', 'START'][randint(0, 1)],
-            'time': time.time()
-        }
-        edge_router.send_multipart(
-            [b'video_pusher', json.dumps(data).encode()])
+    def _on_connect(self, client, userdata, flags, rc):
+        print('on_connect ', rc)
+        client.subscribe('edge')
 
+    def _on_message(self, client, userdata, msg):
+        print('on_message')
+        payload = json.loads(msg.payload.decode())
+        if 'data' in payload:
+            data = payload.get('data')
+            if 'services' in data:
+                if not self.peers_status:
+                    services = data.get('services')
+                    self.peers_daemon(services)
 
-def mqtt_client():
+    def peers_daemon(self, services):
+        evmgr_config = services.get('evmgr')
+        mgr_ident = self.create_evmgr(evmgr_config)
+        evpusher_ident = self.create_pusher(
+            services.get('evpusher')[0], mgr_ident)
+        evpuller = self.create_pusher(
+            services.get('evpuller')[0], mgr_ident)
+        evpuller.send('Hi, I am %s' % evpuller, evpusher_ident)
+        self.peers_status = True
 
-    client = Client()
-    client.username_pw_set('admin', 'password')
-    client.connect('127.0.0.1', 1883)
-    client.on_connect = on_connect
-    client.on_message = on_message
+    def create_evmgr(self, config):
+        evmgr = IpcMgrNode(config.get('sn') + str(config['iid']))
+        evmgr.recv_loop()
+        return evmgr.ident
 
-    client.loop_start()
+    def create_pusher(self, config, mgr_ident):
+        ident = config.get('sn') + str(config['iid'])
+        evpusher = PeerNode(ident, mgr_ident)
+        evpusher.recv_loop()
+        evpusher.ready()
+        return ident
 
-    return client
-
-
-def zmq_server(client):
-
-    poller = zmq.Poller()
-    poller.register(edge_router, zmq.POLLIN)
-    while True:
-        socks = dict(poller.poll())
-        if socks.get(edge_router) == zmq.POLLIN:
-            msg = edge_router.recv_multipart()
-            if len(msg) == 3:
-                msg = msg[1:]
-                print('I 做了一次转发信息给%s' % msg[0])
-                edge_router.send_multipart(msg)
-            elif msg[-1] == b'READY':
-                print('%s 设备准备完毕' % msg[0])
-                edge_router.send_multipart([msg[0], b'Update Config'])
-            else:
-                print('%s 发送信息 %s' % (msg[0], msg[-1]))
-
-
-def send_cloud_msg(client):
-    while True:
-        rc, mid = client.publish('cloud', 'register')
-        time.sleep(10)
+    def send_cloud_msg(self):
+        while True:
+            rc, mid = self.publish('cloud', 'register')
+            time.sleep(10)
 
 
 def main():
-    client = mqtt_client()
-    t1 = Thread(target=zmq_server, args=(client,))
-    t2 = Thread(target=send_cloud_msg, args=(client,))
+    client = EdgeIpcMgr('127.0.0.1', 1883)
+    client.connect()
+    t1 = Thread(target=client.loop)
+    t2 = Thread(target=client.send_cloud_msg)
     t1.daemon = True
     t1.start()
     t2.start()
