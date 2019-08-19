@@ -1,4 +1,3 @@
-from threading import Thread
 import json
 import time
 
@@ -12,6 +11,8 @@ class EdgeIpcMgr(MQTTClient):
     def __init__(self, host, port):
         super(EdgeIpcMgr, self).__init__(host, port)
         self.peers_status = False
+        self.peers = {}
+        self.evmgr = None
 
     def _on_connect(self, client, userdata, flags, rc):
         print('on_connect ', rc)
@@ -28,26 +29,41 @@ class EdgeIpcMgr(MQTTClient):
                     self.peers_daemon(services)
 
     def peers_daemon(self, services):
-        evmgr_config = services.get('evmgr')
-        mgr_ident = self.create_evmgr(evmgr_config)
-        evpusher_ident = self.create_pusher(
-            services.get('evpusher')[0], mgr_ident)
-        evpuller = self.create_pusher(
-            services.get('evpuller')[0], mgr_ident)
-        evpuller.send('Hi, I am %s' % evpuller.ident, evpusher_ident.ident)
-        self.peers_status = True
+        evmgr_config = services.pop('evmgr')
+        self.create_evmgr(evmgr_config)
+
+        # 根据配置创建同辈节点
+        for peer_config in services.values():
+            if isinstance(peer_config, list):
+                for config in peer_config:
+                    self.create_peer(config)
+            elif isinstance(peer_config, dict):
+                self.create_peer(peer_config)
+            else:
+                raise
+
+        # self.create_peer(services.get('evpusher')[0])
+        # self.create_peer(services.get('evpuller')[0])
+        # self.create_peer(services.get('evslicer')[0])
+        # self.create_peer(services.get('evml')[0])
 
     def create_evmgr(self, config):
-        evmgr = IpcMgrNode(config.get('sn') + str(config['iid']))
-        evmgr.recv_loop()
-        return evmgr.ident
-
-    def create_pusher(self, config, mgr_ident):
         ident = config.get('sn') + str(config['iid'])
-        evpusher = PeerNode(ident, mgr_ident)
-        evpusher.recv_loop()
-        evpusher.ready()
-        return evpusher
+        if not self.evmgr:
+            self.evmgr = IpcMgrNode(ident)
+            self.evmgr.recv_loop()
+        return self.evmgr
+
+    def create_peer(self, config):
+        ident = config.get('sn') + str(config['iid'])
+        if ident in self.peers:
+            return
+
+        peer_node = PeerNode(ident, self.evmgr.ident)
+        peer_node.recv_loop()
+        peer_node.ready()
+
+        self.peers[ident] = peer_node
 
     def send_cloud_msg(self):
         while True:

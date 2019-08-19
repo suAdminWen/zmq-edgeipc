@@ -41,27 +41,26 @@ class IpcMgrNode:
     def recv_loop(self):
         # 单开线程，不会阻塞
         t = Thread(target=self._recv_loop)
-        t.daemon = False
+        t.daemon = True
         t.start()
 
     def _recv_loop(self):
 
         while True:
-            # TODO 有一个bug，新建对象之后，第一条消息不能送达！！
-            # try:
-            #     socks = dict(self.poller.poll())
-            # except zmq.ZMQError:
-            #     continue
-            # if socks.get(self.mgr) == zmq.POLLIN:
-            msg = self.mgr.recv_multipart()
-            if len(msg) == 3:
-                print(self.ident + ': 做了一次转发信息给%s' % msg[1])
-                self.send(msg[1], msg[2])
-            elif msg[-1] == b'READY':
-                print(self.ident + ': %s 设备准备完毕' % msg[0])
-                self.send(msg[0], b'Update Config')
-            else:
-                print(self.ident + ': 收到来自%s 的信息 %s' % (msg[0], msg[-1]))
+            try:
+                socks = dict(self.poller.poll())
+            except zmq.ZMQError:
+                continue
+            if socks.get(self.mgr) == zmq.POLLIN:
+                msg = self.mgr.recv_multipart()
+                if len(msg) == 3:
+                    print(self.ident + ': 做了一次转发信息给%s' % msg[1])
+                    self.send(msg[1], msg[2])
+                elif msg[-1] == b'READY':
+                    print(self.ident + ': %s 设备准备完毕' % msg[0])
+                    self.send(msg[0], b'Update Config')
+                else:
+                    print(self.ident + ': 收到来自%s 的信息 %s' % (msg[0], msg[-1]))
 
     def _to_json(self, data):
         try:
