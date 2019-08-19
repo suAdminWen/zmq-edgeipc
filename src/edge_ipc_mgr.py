@@ -6,11 +6,16 @@ from peer_node import PeerNode
 from ipcmgr_node import IpcMgrNode
 
 
+def encode(data):
+    if not isinstance(data, bytes):
+        data = data.encode()
+    return data
+
+
 class EdgeIpcMgr(MQTTClient):
 
     def __init__(self, host, port):
         super(EdgeIpcMgr, self).__init__(host, port)
-        self.peers_status = False
         self.peers = {}
         self.evmgr = None
 
@@ -24,9 +29,8 @@ class EdgeIpcMgr(MQTTClient):
         if 'data' in payload:
             data = payload.get('data')
             if 'services' in data:
-                if not self.peers_status:
-                    services = data.get('services')
-                    self.peers_daemon(services)
+                services = data.get('services')
+                self.peers_daemon(services)
 
     def peers_daemon(self, services):
         evmgr_config = services.pop('evmgr')
@@ -40,7 +44,7 @@ class EdgeIpcMgr(MQTTClient):
             elif isinstance(peer_config, dict):
                 self.create_peer(peer_config)
             else:
-                raise
+                assert ValueError, 'data error'
 
         # self.create_peer(services.get('evpusher')[0])
         # self.create_peer(services.get('evpuller')[0])
@@ -64,11 +68,6 @@ class EdgeIpcMgr(MQTTClient):
         peer_node.ready()
 
         self.peers[ident] = peer_node
-
-    def send_cloud_msg(self):
-        while True:
-            rc, mid = self.publish('cloud', 'register')
-            time.sleep(10)
 
 
 def main():

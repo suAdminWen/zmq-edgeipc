@@ -50,6 +50,7 @@ class PeerNode:
     def recv_loop(self):
         # 单开线程，不会阻塞
         t = Thread(target=self._recv_loop)
+        t.daemon = True
         t.start()
 
     def _recv_loop(self):
@@ -85,5 +86,5 @@ if __name__ == '__main__':
     node.recv_loop()
     node.ready()
     while True:
-        time.sleep(2)
+        time.sleep(5)
         node.send('I am ILS_23', 'ILS-22')
